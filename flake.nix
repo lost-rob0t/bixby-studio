@@ -1,159 +1,185 @@
 {
-  description = "Bixby Studio";
-  # TODO uses old ssl so there is that...
+  description = "Bixby Developer Studio packaged for NixOS";
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
     flake-utils.url = "github:numtide/flake-utils";
+
+    # Kept in the input graph for lock-file compatibility with the original
+    # flake. The package no longer needs nixGL just to start.
     nixgl.url = "github:nix-community/nixGL";
   };
 
   outputs = { self, nixpkgs, flake-utils, nixgl }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs { inherit system; };
-        nixglPkg = nixgl.packages.${system}.nixGLDefault;
-      in
-      {
-        packages.default = pkgs.buildFHSUserEnv {
-          name = "bixby-studio";
-          targetPkgs = pkgs: (with pkgs; [
-            # Extracted Bixby Studio
-            (stdenv.mkDerivation rec {
-              pname = "bixby-studio-extracted";
-              version = "8.23.1-r24c.2843029";
-              
-              src = fetchurl {
-                url = "https://bixby-studio.s3.amazonaws.com/stable-c4f5c975-1d91-4065-b661-633de7275e11/BixbyStudio-${version}-linux.rpm";
-                sha256 = "sha256-wae96w06w8GyXOVKKHd1ddq0ANQab0XIqug2fyC1NrM=";
-              };
-              
-              nativeBuildInputs = [ rpm cpio ];
-              
-              unpackPhase = ''
-                rpm2cpio $src | cpio -idmv
-              '';
-              
-              installPhase = ''
-                mkdir -p $out
-                cp -r ./* $out/
-              '';
-              
-              dontConfigure = true;
-              dontBuild = true;
-            })
-            # System libraries
-            glib gvfs gsettings-desktop-schemas nss nspr gtk3 atk cairo pango gdk-pixbuf
-            xorg.libX11 xorg.libXcomposite xorg.libXdamage xorg.libXext xorg.libXfixes
-            xorg.libXrandr xorg.libxcb xorg.libXi xorg.libXScrnSaver xorg.libXtst
-            xorg.libxshmfence xorg.libXcursor xorg.libXrender xorg.libXinerama
-            alsa-lib cups dbus fontconfig freetype libdrm mesa libGL libGLU openssl_1_1
-            vulkan-loader libglvnd systemd util-linux procps libuuid libsecret
-            at-spi2-atk at-spi2-core expat libxkbcommon
-          ]);
-          
-          runScript = pkgs.writeScript "bixby-studio-runner" ''
-            #!/bin/bash
-            export GIO_EXTRA_MODULES=""
-            export LIBGL_DRIVERS_PATH="${pkgs.mesa.drivers}/lib/dri"
-            export __EGL_VENDOR_LIBRARY_DIRS="${pkgs.mesa.drivers}/share/glvnd/egl_vendor.d"
-            cd /usr/opt/Bixby\ Studio 2>/dev/null || cd /opt/Bixby\ Studio
-            exec ./bixbystudio --disable-gpu --disable-gpu-sandbox --no-sandbox --disable-dev-shm-usage --disable-extensions --no-zygote --disable-seccomp-filter-sandbox --disable-setuid-sandbox "$@"
-          '';
+        pkgs = import nixpkgs {
+          inherit system;
+          config = {
+            allowUnfree = true;
+            permittedInsecurePackages = [ "openssl-1.1.1w" ];
+          };
         };
 
-        packages.old = pkgs.stdenv.mkDerivation rec {
-          pname = "bixby-studio";
-          version = "8.23.1-r24c.2843029";
+        version = "8.23.1-r24c.2843029";
+
+        bixbyStudioUnwrapped = pkgs.stdenvNoCC.mkDerivation {
+          pname = "bixby-studio-unwrapped";
+          inherit version;
 
           src = pkgs.fetchurl {
             url = "https://bixby-studio.s3.amazonaws.com/stable-c4f5c975-1d91-4065-b661-633de7275e11/BixbyStudio-${version}-linux.rpm";
-            sha256 = "sha256-wae96w06w8GyXOVKKHd1ddq0ANQab0XIqug2fyC1NrM=";
+            hash = "sha256-wae96w06w8GyXOVKKHd1ddq0ANQab0XIqug2fyC1NrM=";
           };
 
-          nativeBuildInputs = [ pkgs.rpm
-                                    pkgs.cpio
-                                    pkgs.autoPatchelfHook
-                              ];
-  buildInputs = [
-    pkgs.glib
-    pkgs.gvfs
-    pkgs.gsettings-desktop-schemas
-    pkgs.nss
-    pkgs.gtk3
-    pkgs.atk
-    pkgs.cairo
-    pkgs.pango
-    pkgs.gdk-pixbuf
-    pkgs.xorg.libX11
-    pkgs.xorg.libXcomposite
-    pkgs.xorg.libXdamage
-    pkgs.xorg.libXext
-    pkgs.xorg.libXfixes
-    pkgs.xorg.libXrandr
-    pkgs.xorg.libxcb
-    pkgs.xorg.libXi
-    pkgs.xorg.libXScrnSaver
-    pkgs.xorg.libXtst
-    pkgs.xorg.libxshmfence
-    pkgs.xorg.libXcursor
-    pkgs.xorg.libXrender
-    pkgs.xorg.libXinerama
-    pkgs.alsa-lib
-    pkgs.cups
-    pkgs.dbus
-    pkgs.fontconfig
-    pkgs.freetype
-    pkgs.libdrm
-    pkgs.mesa
-    pkgs.libGL
-    pkgs.libGLU
-    pkgs.openssl_1_1
-    pkgs.vulkan-loader
-    pkgs.libglvnd
-    # System libraries for Electron
-    pkgs.systemd
-    pkgs.util-linux
-    pkgs.procps
-    pkgs.libuuid
-    pkgs.libsecret
-    pkgs.at-spi2-atk
-    pkgs.at-spi2-core
-  ];
-  unpackPhase = ''
-            rpm2cpio $src | cpio -idmv
+          nativeBuildInputs = with pkgs; [ rpm cpio ];
+
+          unpackPhase = ''
+            runHook preUnpack
+            rpm2cpio "$src" | cpio -idm
+            runHook postUnpack
           '';
 
           installPhase = ''
-            mkdir -p $out
-            cp -r ./* $out/
-            mkdir -p $out/bin
-            cat > $out/bin/bixbystudio << 'EOF'
-#!/bin/sh
-exec ${nixglPkg}/bin/nixGL "$out/opt/Bixby Studio/bixbystudio" "$@"
-EOF
-            chmod +x $out/bin/bixbystudio
+            runHook preInstall
+            mkdir -p "$out"
+            cp -a ./. "$out/"
+            runHook postInstall
           '';
 
           dontConfigure = true;
           dontBuild = true;
+        };
 
-  preFixup = ''
-    gappsWrapperArgs+=(
-      --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath buildInputs}
-      --set LIBGL_DRIVERS_PATH "${pkgs.mesa.drivers}/lib/dri"
-      --set __EGL_VENDOR_LIBRARY_DIRS "${pkgs.mesa.drivers}/share/glvnd/egl_vendor.d"
-      --unset GIO_MODULE_DIR
-      --set GIO_EXTRA_MODULES ""
-      --add-flags "--disable-gpu --disable-gpu-sandbox --no-sandbox --disable-dev-shm-usage --disable-extensions --no-zygote --disable-seccomp-filter-sandbox --disable-setuid-sandbox"
-    )
-  '';
+        launcher = pkgs.writeShellScript "bixby-studio-launcher" ''
+          set -euo pipefail
+
+          candidates=(
+            "${bixbyStudioUnwrapped}/opt/Bixby Studio/bixbystudio"
+            "${bixbyStudioUnwrapped}/usr/opt/Bixby Studio/bixbystudio"
+          )
+
+          executable=""
+          for candidate in "''${candidates[@]}"; do
+            if [[ -x "$candidate" ]]; then
+              executable="$candidate"
+              break
+            fi
+          done
+
+          if [[ -z "$executable" ]]; then
+            echo "Bixby Studio executable was not found in the vendor package" >&2
+            exit 1
+          fi
+
+          flags=(
+            --no-sandbox
+            --disable-dev-shm-usage
+          )
+
+          # GPU acceleration can be enabled explicitly once the host GL stack
+          # is known to cooperate with this old Electron build.
+          if [[ "''${BIXBY_STUDIO_ENABLE_GPU:-0}" != "1" ]]; then
+            flags+=(--disable-gpu)
+          fi
+
+          exec "$executable" "''${flags[@]}" "$@"
+        '';
+
+        desktopItem = pkgs.makeDesktopItem {
+          name = "bixby-studio";
+          desktopName = "Bixby Studio";
+          genericName = "Bixby Developer Studio";
+          comment = "Develop and test Samsung Bixby capsules";
+          exec = "bixby-studio %U";
+          terminal = false;
+          categories = [ "Development" "IDE" ];
+          startupNotify = true;
+        };
+
+        bixbyStudio = pkgs.buildFHSEnv {
+          name = "bixby-studio";
+
+          targetPkgs = pkgs: with pkgs; [
+            bixbyStudioUnwrapped
+
+            alsa-lib
+            at-spi2-atk
+            at-spi2-core
+            atk
+            cairo
+            cups
+            dbus
+            expat
+            fontconfig
+            freetype
+            gdk-pixbuf
+            glib
+            gtk3
+            libGL
+            libdrm
+            libglvnd
+            libnotify
+            libsecret
+            libuuid
+            libxkbcommon
+            mesa
+            nspr
+            nss
+            openssl_1_1
+            pango
+            stdenv.cc.cc.lib
+            systemd
+            util-linux
+
+            xorg.libX11
+            xorg.libXcomposite
+            xorg.libXcursor
+            xorg.libXdamage
+            xorg.libXext
+            xorg.libXfixes
+            xorg.libXi
+            xorg.libXinerama
+            xorg.libXrandr
+            xorg.libXrender
+            xorg.libXScrnSaver
+            xorg.libXtst
+            xorg.libxcb
+            xorg.libxshmfence
+          ];
+
+          runScript = launcher;
+
+          extraInstallCommands = ''
+            mkdir -p "$out/share/applications"
+            cp ${desktopItem}/share/applications/bixby-studio.desktop \
+              "$out/share/applications/bixby-studio.desktop"
+          '';
 
           meta = with pkgs.lib; {
-            description = "Bixby Studio IDE";
+            description = "Samsung Bixby Developer Studio IDE";
             homepage = "https://bixbydevelopers.com/";
             license = licenses.unfree;
+            mainProgram = "bixby-studio";
             platforms = [ "x86_64-linux" ];
           };
+        };
+
+        app = {
+          type = "app";
+          program = "${bixbyStudio}/bin/bixby-studio";
+        };
+      in
+      {
+        packages = {
+          default = bixbyStudio;
+          bixby-studio = bixbyStudio;
+          unwrapped = bixbyStudioUnwrapped;
+        };
+
+        apps = {
+          default = app;
+          bixby-studio = app;
         };
       });
 }

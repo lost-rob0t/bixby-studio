@@ -161,6 +161,11 @@
             platforms = [ "x86_64-linux" ];
           };
         };
+
+        app = {
+          type = "app";
+          program = "${bixbyStudio}/bin/bixby-studio";
+        };
       in
       {
         packages = {
@@ -170,11 +175,8 @@
         };
 
         apps = {
-          default = {
-            type = "app";
-            program = "${bixbyStudio}/bin/bixby-studio";
-          };
-          bixby-studio = self.apps.${system}.default;
+          default = app;
+          bixby-studio = app;
         };
       });
 }

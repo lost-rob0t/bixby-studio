@@ -2,7 +2,7 @@
   description = "Bixby Developer Studio packaged for NixOS";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -11,10 +11,7 @@
       let
         pkgs = import nixpkgs {
           inherit system;
-          config = {
-            allowUnfree = true;
-            permittedInsecurePackages = [ "openssl-1.1.1w" ];
-          };
+          config.allowUnfree = true;
         };
 
         version = "8.23.1-r24c.2843029";
@@ -122,7 +119,7 @@
             mesa
             nspr
             nss
-            openssl_1_1
+            openssl_3
             pango
             stdenv.cc.cc.lib
             systemd
